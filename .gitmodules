@@ -1,0 +1,6 @@
+[submodule "vendor/substrait"]
+	path = vendor/substrait
+	url = git@github.com:substrait-io/substrait.git
+[submodule "vendor/protobuf"]
+	path = vendor/protobuf
+	url = git@github.com:protocolbuffers/protobuf.git
