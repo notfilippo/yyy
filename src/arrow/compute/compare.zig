@@ -11,6 +11,26 @@ pub fn eq(comptime T: type, lhs: anytype, rhs: anytype) T {
     return lhs == rhs;
 }
 
+pub fn gt(comptime T: type, lhs: anytype, rhs: anytype) T {
+    return lhs > rhs;
+}
+
+pub fn lt(comptime T: type, lhs: anytype, rhs: anytype) T {
+    return lhs < rhs;
+}
+
+pub fn ge(comptime T: type, lhs: anytype, rhs: anytype) T {
+    return lhs >= rhs;
+}
+
+pub fn le(comptime T: type, lhs: anytype, rhs: anytype) T {
+    return lhs <= rhs;
+}
+
+pub fn ne(comptime T: type, lhs: anytype, rhs: anytype) T {
+    return lhs != rhs;
+}
+
 pub fn kernel(
     comptime T: type,
     comptime vector_len: comptime_int,
@@ -20,6 +40,8 @@ pub fn kernel(
     allocator: std.mem.Allocator,
 ) !BooleanArray {
     comptime assert(@TypeOf(lhs) == PrimitiveArray(T) or @TypeOf(rhs) == PrimitiveArray(T));
+
+    // Ensure that the vector length is a multiple of 8.
     comptime assert(vector_len % 8 == 0);
 
     const len = if (@TypeOf(lhs) == PrimitiveArray(T)) lhs.len() else rhs.len();
@@ -28,7 +50,7 @@ pub fn kernel(
 
     const values = try buffer.BooleanBuffer.init(len, allocator);
 
-    const tt = @Type(.{ .int = .{ .bits = vector_len, .signedness = .unsigned } });
+    const PackedMask = @Type(.{ .int = .{ .bits = vector_len, .signedness = .unsigned } });
 
     var i: usize = 0;
     while (i < parallel) : (i += 1) {
@@ -48,9 +70,9 @@ pub fn kernel(
         };
 
         const out = @call(.always_inline, op, .{ @Vector(vector_len, bool), lv, rv });
-        const val = @as(tt, @bitCast(out));
+        const mask = @as(PackedMask, @bitCast(out));
 
-        @memcpy(values.masks.slice[buffer.BooleanBuffer.maskIndex(start)..buffer.BooleanBuffer.maskIndex(end)], std.mem.asBytes(&val));
+        @memcpy(values.masks.slice[buffer.BooleanBuffer.maskIndex(start)..buffer.BooleanBuffer.maskIndex(end)], std.mem.asBytes(&mask));
     }
 
     const offset = i * vector_len;

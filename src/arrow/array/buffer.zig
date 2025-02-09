@@ -105,18 +105,19 @@ pub const BooleanBuffer = struct {
         }
     }
 
-    pub fn setOrClear(self: Self, index: usize, value: bool) void {
+    pub inline fn setOrClear(self: Self, index: usize, value: bool) void {
         assert(index < self.bit_len);
-        const old = self.masks.slice[maskIndex(index)];
-        self.masks.slice[maskIndex(index)] = old & ~maskBit(index) | (@as(MaskInt, @intFromBool(value)) << @as(ShiftInt, @truncate(index)));
+        const clearOld = self.masks.slice[maskIndex(index)] & ~maskBit(index);
+        const setNew = @as(MaskInt, @intFromBool(value)) << @as(ShiftInt, @truncate(index));
+        self.masks.slice[maskIndex(index)] = clearOld | setNew;
     }
 
-    pub fn set(self: Self, index: usize) void {
+    pub inline fn set(self: Self, index: usize) void {
         assert(index < self.bit_len);
         self.masks.slice[maskIndex(index)] |= maskBit(index);
     }
 
-    pub fn clear(self: Self, index: usize) void {
+    pub inline fn clear(self: Self, index: usize) void {
         assert(index < self.bit_len);
         self.masks.slice[maskIndex(index)] &= ~maskBit(index);
     }
