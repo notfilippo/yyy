@@ -6,8 +6,8 @@ const math = std.math;
 const buffer = @import("../array/buffer.zig");
 const PrimitiveArray = @import("../array/primitive.zig").PrimitiveArray;
 
-fn add_(comptime T: type, lhs: T, rhs: T) T {
-    return switch (@typeInfo(T)) {
+fn add(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+    return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs +% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
             .int => lhs +% rhs,
@@ -17,18 +17,8 @@ fn add_(comptime T: type, lhs: T, rhs: T) T {
     };
 }
 
-pub fn add(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    return binary_kenel(T, vector_len, add_, add_, lhs, rhs, allocator);
-}
-
-fn sub_(comptime T: type, lhs: T, rhs: T) T {
-    return switch (@typeInfo(T)) {
+fn sub(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+    return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs -% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
             .int => lhs -% rhs,
@@ -38,18 +28,8 @@ fn sub_(comptime T: type, lhs: T, rhs: T) T {
     };
 }
 
-pub fn sub(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    return binary_kenel(T, vector_len, sub_, sub_, lhs, rhs, allocator);
-}
-
-fn mul_(comptime T: type, lhs: T, rhs: T) T {
-    return switch (@typeInfo(T)) {
+fn mul(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+    return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs *% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
             .int => lhs *% rhs,
@@ -59,18 +39,8 @@ fn mul_(comptime T: type, lhs: T, rhs: T) T {
     };
 }
 
-pub fn mul(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    return binary_kenel(T, vector_len, mul_, mul_, lhs, rhs, allocator);
-}
-
-fn div_(comptime T: type, lhs: T, rhs: T) T {
-    return switch (@typeInfo(T)) {
+fn div(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+    return switch (@typeInfo(@TypeOf(lhs))) {
         .int => @divTrunc(lhs, rhs),
         .vector => |info| switch (@typeInfo(info.child)) {
             .int => @divTrunc(lhs, rhs),
@@ -80,28 +50,8 @@ fn div_(comptime T: type, lhs: T, rhs: T) T {
     };
 }
 
-pub fn div(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    return binary_kenel(T, vector_len, div_, div_, lhs, rhs, allocator);
-}
-
-fn mod_(comptime T: type, lhs: T, rhs: T) T {
+fn mod(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return @mod(lhs, rhs);
-}
-
-pub fn mod(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    return binary_kenel(T, vector_len, mod_, mod_, lhs, rhs, allocator);
 }
 
 // This is a generic kernel for binary operations on primitive arrays. It uses
@@ -110,8 +60,7 @@ pub fn mod(
 fn binary_kenel(
     comptime T: type,
     comptime vector_len: comptime_int,
-    comptime scalar_op: fn (comptime type, T, T) T,
-    comptime vector_op: fn (comptime type, @Vector(vector_len, T), @Vector(vector_len, T)) @Vector(vector_len, T),
+    comptime op: anytype,
     lhs: PrimitiveArray(T),
     rhs: PrimitiveArray(T),
     allocator: std.mem.Allocator,
@@ -131,7 +80,7 @@ fn binary_kenel(
         const end = start + vector_len;
         const lv: @Vector(vector_len, T) = lhs.values.slice[start..end][0..vector_len].*;
         const rv: @Vector(vector_len, T) = rhs.values.slice[start..end][0..vector_len].*;
-        const out = vector_op(@Vector(vector_len, T), lv, rv);
+        const out = @call(.always_inline, op, .{ lv, rv });
         values.slice[start..end][0..vector_len].* = out;
     }
 
@@ -142,7 +91,7 @@ fn binary_kenel(
     i = 0;
     while (i < left) : (i += 1) {
         const index = offset +% i;
-        values.slice[index] = scalar_op(T, lhs.values.slice[index], rhs.values.slice[index]);
+        values.slice[index] = @call(.always_inline, op, .{ lhs.values.slice[index], rhs.values.slice[index] });
     }
 
     // Intersect the validity buffer of lhs with the validity buffer of rhs.
@@ -173,8 +122,7 @@ fn binary_kenel(
 fn binary_scalar_right_kernel(
     comptime T: type,
     comptime vector_len: comptime_int,
-    comptime scalar_op: fn (comptime type, T, T) T,
-    comptime vector_op: fn (comptime type, @Vector(vector_len, T), @Vector(vector_len, T)) @Vector(vector_len, T),
+    comptime op: anytype,
     lhs: PrimitiveArray(T),
     rhs: T,
     allocator: std.mem.Allocator,
@@ -190,7 +138,7 @@ fn binary_scalar_right_kernel(
         const end = start + vector_len;
         const lv: @Vector(vector_len, T) = lhs.values.slice[start..end][0..vector_len].*;
         const rv: @Vector(vector_len, T) = @splat(rhs);
-        const out = vector_op(@Vector(vector_len, T), lv, rv);
+        const out = @call(.always_inline, op, .{ lv, rv });
         values.slice[start..end][0..vector_len].* = out;
     }
 
@@ -199,7 +147,7 @@ fn binary_scalar_right_kernel(
     i = 0;
     while (i < left) : (i += 1) {
         const index = offset +% i;
-        values.slice[index] = scalar_op(T, lhs.values.slice[index], rhs);
+        values.slice[index] = @call(.always_inline, op, .{ lhs.values.slice[index], rhs });
     }
 
     const validity = if (lhs.validity) |validity| validity.clone() else null;
@@ -213,8 +161,7 @@ fn binary_scalar_right_kernel(
 fn binary_scalar_left_kernel(
     comptime T: type,
     comptime vector_len: comptime_int,
-    comptime scalar_op: fn (comptime type, T, T) T,
-    comptime vector_op: fn (comptime type, @Vector(vector_len, T), @Vector(vector_len, T)) @Vector(vector_len, T),
+    comptime op: anytype,
     lhs: T,
     rhs: PrimitiveArray(T),
     allocator: std.mem.Allocator,
@@ -230,7 +177,7 @@ fn binary_scalar_left_kernel(
         const end = start + vector_len;
         const lv: @Vector(vector_len, T) = @splat(lhs);
         const rv: @Vector(vector_len, T) = rhs.values.slice[start..end][0..vector_len].*;
-        const out = vector_op(@Vector(vector_len, T), lv, rv);
+        const out = @call(.always_inline, op, .{ lv, rv });
         values.slice[start..end][0..vector_len].* = out;
     }
 
@@ -239,7 +186,7 @@ fn binary_scalar_left_kernel(
     i = 0;
     while (i < left) : (i += 1) {
         const index = offset +% i;
-        values.slice[index] = scalar_op(T, lhs, rhs.values.slice[index]);
+        values.slice[index] = @call(.always_inline, op, .{ lhs, rhs.values.slice[index] });
     }
 
     const validity = if (rhs.validity) |validity| validity.clone() else null;
@@ -271,32 +218,32 @@ test "binary operations between arrays" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try add(T, vector_len, lhs, rhs, testing.allocator);
+        var added = try binary_kenel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try sub(T, vector_len, lhs, rhs, testing.allocator);
+        var subtracted = try binary_kenel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try mul(T, vector_len, lhs, rhs, testing.allocator);
+        var multiplied = try binary_kenel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try div(T, vector_len, lhs, rhs, testing.allocator);
+        var divided = try binary_kenel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try mod(T, vector_len, lhs, rhs, testing.allocator);
+        var modded = try binary_kenel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
         for (lhs.values.slice, rhs.values.slice, added.values.slice, subtracted.values.slice, multiplied.values.slice, divided.values.slice, modded.values.slice) |l, r, a, s, m, d, md| {
-            try testing.expect(add_(T, l, r) == a or ((math.isNan(l) or math.isNan(r)) and math.isNan(a)));
-            try testing.expect(sub_(T, l, r) == s or ((math.isNan(l) or math.isNan(r)) and math.isNan(s)));
-            try testing.expect(mul_(T, l, r) == m or ((math.isNan(l) or math.isNan(r)) and math.isNan(m)));
-            try testing.expect(div_(T, l, r) == d or ((math.isNan(l) or math.isNan(r)) and math.isNan(d)));
-            try testing.expect(mod_(T, l, r) == md or ((math.isNan(l) or math.isNan(r)) and math.isNan(md)) or (math.isNan(mod_(T, l, r)) and math.isNan(md)));
+            try testing.expect(add(l, r) == a or ((math.isNan(l) or math.isNan(r)) and math.isNan(a)));
+            try testing.expect(sub(l, r) == s or ((math.isNan(l) or math.isNan(r)) and math.isNan(s)));
+            try testing.expect(mul(l, r) == m or ((math.isNan(l) or math.isNan(r)) and math.isNan(m)));
+            try testing.expect(div(l, r) == d or ((math.isNan(l) or math.isNan(r)) and math.isNan(d)));
+            try testing.expect(mod(l, r) == md or ((math.isNan(l) or math.isNan(r)) and math.isNan(md)) or (math.isNan(mod(l, r)) and math.isNan(md)));
         }
     }
 }
@@ -315,32 +262,32 @@ test "binary scalar right kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try binary_scalar_right_kernel(T, vector_len, add_, add_, lhs, rhs, testing.allocator);
+        var added = try binary_scalar_right_kernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try binary_scalar_right_kernel(T, vector_len, sub_, sub_, lhs, rhs, testing.allocator);
+        var subtracted = try binary_scalar_right_kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try binary_scalar_right_kernel(T, vector_len, mul_, mul_, lhs, rhs, testing.allocator);
+        var multiplied = try binary_scalar_right_kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try binary_scalar_right_kernel(T, vector_len, div_, div_, lhs, rhs, testing.allocator);
+        var divided = try binary_scalar_right_kernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try binary_scalar_right_kernel(T, vector_len, mod_, mod_, lhs, rhs, testing.allocator);
+        var modded = try binary_scalar_right_kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
         for (lhs.values.slice, added.values.slice, subtracted.values.slice, multiplied.values.slice, divided.values.slice, modded.values.slice) |l, a, s, m, d, md| {
-            try testing.expect(add_(T, l, rhs) == a or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(a)));
-            try testing.expect(sub_(T, l, rhs) == s or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(s)));
-            try testing.expect(mul_(T, l, rhs) == m or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(m)));
-            try testing.expect(div_(T, l, rhs) == d or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(d)));
-            try testing.expect(mod_(T, l, rhs) == md or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(md)) or (math.isNan(mod_(T, l, rhs)) and math.isNan(md)));
+            try testing.expect(add(l, rhs) == a or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(a)));
+            try testing.expect(sub(l, rhs) == s or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(s)));
+            try testing.expect(mul(l, rhs) == m or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(m)));
+            try testing.expect(div(l, rhs) == d or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(d)));
+            try testing.expect(mod(l, rhs) == md or ((math.isNan(l) or math.isNan(rhs)) and math.isNan(md)) or (math.isNan(mod(l, rhs)) and math.isNan(md)));
         }
     }
 }
@@ -365,32 +312,32 @@ test "binary scalar left kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try binary_scalar_left_kernel(T, vector_len, add_, add_, lhs, rhs, testing.allocator);
+        var added = try binary_scalar_left_kernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try binary_scalar_left_kernel(T, vector_len, sub_, sub_, lhs, rhs, testing.allocator);
+        var subtracted = try binary_scalar_left_kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try binary_scalar_left_kernel(T, vector_len, mul_, mul_, lhs, rhs, testing.allocator);
+        var multiplied = try binary_scalar_left_kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try binary_scalar_left_kernel(T, vector_len, div_, div_, lhs, rhs, testing.allocator);
+        var divided = try binary_scalar_left_kernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try binary_scalar_left_kernel(T, vector_len, mod_, mod_, lhs, rhs, testing.allocator);
+        var modded = try binary_scalar_left_kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
         for (rhs.values.slice, added.values.slice, subtracted.values.slice, multiplied.values.slice, divided.values.slice, modded.values.slice) |r, a, s, m, d, md| {
-            try testing.expect(add_(T, lhs, r) == a or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(a)));
-            try testing.expect(sub_(T, lhs, r) == s or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(s)));
-            try testing.expect(mul_(T, lhs, r) == m or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(m)));
-            try testing.expect(div_(T, lhs, r) == d or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(d)));
-            try testing.expect(mod_(T, lhs, r) == md or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(md)) or (math.isNan(mod_(T, lhs, r)) and math.isNan(md)));
+            try testing.expect(add(lhs, r) == a or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(a)));
+            try testing.expect(sub(lhs, r) == s or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(s)));
+            try testing.expect(mul(lhs, r) == m or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(m)));
+            try testing.expect(div(lhs, r) == d or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(d)));
+            try testing.expect(mod(lhs, r) == md or ((math.isNan(lhs) or math.isNan(r)) and math.isNan(md)) or (math.isNan(mod(lhs, r)) and math.isNan(md)));
         }
     }
 }
