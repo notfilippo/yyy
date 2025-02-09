@@ -34,6 +34,12 @@ pub fn ValueBuffer(comptime T: type) type {
             }
         }
 
+        pub fn fromSlice(values: []const T, allocator: std.mem.Allocator) !*Self {
+            const self = try Self.init(values.len, allocator);
+            @memcpy(self.slice, values);
+            return self;
+        }
+
         pub fn clone(self: *Self) *Self {
             _ = self.rc.fetchAdd(1, .monotonic);
             return self;
@@ -41,7 +47,7 @@ pub fn ValueBuffer(comptime T: type) type {
     };
 }
 
-pub const ValidityBuffer = struct {
+pub const BooleanBuffer = struct {
     const Self = @This();
 
     const MaskInt = u8;
@@ -70,7 +76,7 @@ pub const ValidityBuffer = struct {
 
     /// Returns true if the bit at the specified index is present in the set,
     /// false otherwise.
-    pub fn isValid(self: Self, index: usize) bool {
+    pub inline fn isValid(self: Self, index: usize) bool {
         assert(index < self.bit_len);
         return (self.masks.slice[maskIndex(index)] & maskBit(index)) != 0;
     }
@@ -99,25 +105,31 @@ pub const ValidityBuffer = struct {
         }
     }
 
-    pub fn set(self: *Self, index: usize) void {
+    pub fn setOrClear(self: Self, index: usize, value: bool) void {
+        assert(index < self.bit_len);
+        const old = self.masks.slice[maskIndex(index)];
+        self.masks.slice[maskIndex(index)] = old & ~maskBit(index) | (@as(MaskInt, @intFromBool(value)) << @as(ShiftInt, @truncate(index)));
+    }
+
+    pub fn set(self: Self, index: usize) void {
         assert(index < self.bit_len);
         self.masks.slice[maskIndex(index)] |= maskBit(index);
     }
 
-    pub fn clear(self: *Self, index: usize) void {
+    pub fn clear(self: Self, index: usize) void {
         assert(index < self.bit_len);
         self.masks.slice[maskIndex(index)] &= ~maskBit(index);
     }
 
-    inline fn maskBit(index: usize) MaskInt {
+    pub inline fn maskBit(index: usize) MaskInt {
         return @as(MaskInt, 1) << @as(ShiftInt, @truncate(index));
     }
 
-    inline fn maskIndex(index: usize) usize {
+    pub inline fn maskIndex(index: usize) usize {
         return index >> @bitSizeOf(ShiftInt);
     }
 
-    inline fn numMasks(bit_len: usize) usize {
+    pub inline fn numMasks(bit_len: usize) usize {
         return (bit_len + (@bitSizeOf(MaskInt) - 1)) / @bitSizeOf(MaskInt);
     }
 };

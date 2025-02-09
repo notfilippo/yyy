@@ -8,7 +8,7 @@ pub fn BinaryArray(comptime O: type) type {
     return struct {
         const Self = @This();
 
-        validity: ?buffer.ValidityBuffer,
+        validity: ?buffer.BooleanBuffer,
         offsets: *buffer.ValueBuffer(O),
         values: *buffer.ValueBuffer(u8),
 
@@ -18,6 +18,15 @@ pub fn BinaryArray(comptime O: type) type {
             if (self.validity) |*validity| {
                 validity.deinit();
             }
+        }
+
+        pub fn clone(self: Self) Self {
+            const validity = if (self.validity) |*validity| validity.clone() else null;
+            return .{
+                .values = self.values.clone(),
+                .offsets = self.offsets.clone(),
+                .validity = validity,
+            };
         }
 
         // Returns the value at the specified index.
@@ -38,7 +47,7 @@ pub fn BinaryArray(comptime O: type) type {
 }
 
 test "layout" {
-    var validity = try buffer.ValidityBuffer.init(5, testing.allocator);
+    var validity = try buffer.BooleanBuffer.init(5, testing.allocator);
     const offsets = try buffer.ValueBuffer(i32).init(6, testing.allocator);
     const values = try buffer.ValueBuffer(u8).init(18, testing.allocator);
 
@@ -57,10 +66,10 @@ test "layout" {
     };
     defer array.deinit();
 
-    try testing.expectEqual(array.len(), 5);
-    try testing.expectEqualStrings(array.at(0).?, "i");
-    try testing.expectEqualStrings(array.at(1).?, "really");
-    try testing.expectEqualStrings(array.at(2).?, "like");
-    try testing.expectEqual(array.at(3), null);
-    try testing.expectEqualStrings(array.at(4).?, "turtles");
+    try testing.expectEqual(5, array.len());
+    try testing.expectEqualStrings("i", array.at(0).?);
+    try testing.expectEqualStrings("really", array.at(1).?);
+    try testing.expectEqualStrings("like", array.at(2).?);
+    try testing.expectEqual(null, array.at(3));
+    try testing.expectEqualStrings("turtles", array.at(4).?);
 }

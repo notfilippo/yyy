@@ -54,11 +54,7 @@ pub fn mod(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return @mod(lhs, rhs);
 }
 
-// binaryKernel performs a binary operation between two values, either scalar or
-// array of values of the same type.
-// The operation is executed in SIMD vector operations as much as possible.
-// The result is stored in a new PrimitiveArray.
-pub fn binaryKernel(
+pub fn kernel(
     comptime T: type,
     comptime vector_len: comptime_int,
     comptime op: anytype,
@@ -119,7 +115,7 @@ pub fn binaryKernel(
 
     // Intersect the validity buffer of lhs with the validity buffer of rhs.
 
-    var validity: ?buffer.ValidityBuffer = null;
+    var validity: ?buffer.BooleanBuffer = null;
 
     const lhs_validity = switch (@TypeOf(lhs)) {
         PrimitiveArray(T) => lhs.validity,
@@ -133,7 +129,7 @@ pub fn binaryKernel(
 
     if (lhs_validity != null and rhs_validity != null) {
         // Both validity bitmaps are set.
-        validity = try buffer.ValidityBuffer.init(len, allocator);
+        validity = try buffer.BooleanBuffer.init(len, allocator);
         @memcpy(validity.?.masks.slice, lhs_validity.?.masks.slice);
         validity.?.setIntersection(rhs_validity.?);
     } else if (lhs_validity != null and rhs_validity == null) {
@@ -171,23 +167,23 @@ test "binary operations between arrays" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try kernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try kernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
@@ -215,23 +211,23 @@ test "binary scalar right kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try kernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try kernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
@@ -265,23 +261,23 @@ test "binary scalar left kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try kernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try kernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 

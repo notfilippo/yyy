@@ -9,7 +9,7 @@ pub fn PrimitiveArray(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        validity: ?buffer.ValidityBuffer,
+        validity: ?buffer.BooleanBuffer,
         values: *buffer.ValueBuffer(T),
 
         pub fn deinit(self: Self) void {
@@ -20,11 +20,7 @@ pub fn PrimitiveArray(comptime T: type) type {
         }
 
         pub fn clone(self: Self) Self {
-            const validity = if (self.validity) |*validity| {
-                return validity.clone();
-            } else {
-                return null;
-            };
+            const validity = if (self.validity) |*validity| validity.clone() else null;
             return .{
                 .values = self.values.clone(),
                 .validity = validity,
@@ -39,19 +35,22 @@ pub fn PrimitiveArray(comptime T: type) type {
             return null;
         }
 
-        // Returns an iterator over the values in the array.
-        pub fn iter(self: *Self) FixedSizeIterator(T) {
-            return FixedSizeIterator(T){ .array = self, .index = 0 };
-        }
-
         // Returns the number of values in the array.
         pub inline fn len(self: Self) usize {
             return self.values.slice.len;
         }
 
+        pub fn fromSlice(values: []const T, allocator: std.mem.Allocator) !Self {
+            const valuesBuffer = try buffer.ValueBuffer(T).fromSlice(values, allocator);
+            return .{
+                .values = valuesBuffer,
+                .validity = null,
+            };
+        }
+
         pub fn random(rng: std.Random, size: usize, allocator: std.mem.Allocator) !Self {
             const values = try buffer.ValueBuffer(T).init(size, allocator);
-            const validity = try buffer.ValidityBuffer.init(size, allocator);
+            const validity = try buffer.BooleanBuffer.init(size, allocator);
 
             rng.bytes(std.mem.sliceAsBytes(values.slice));
             rng.bytes(std.mem.sliceAsBytes(validity.masks.slice));
@@ -64,27 +63,8 @@ pub fn PrimitiveArray(comptime T: type) type {
     };
 }
 
-pub fn FixedSizeIterator(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        array: *PrimitiveArray(T),
-        index: usize,
-
-        // Returns the next value in the array, or null if there are no more values.
-        pub fn next(self: *Self) ??T {
-            if (self.index >= self.array.len()) {
-                return null;
-            }
-            const value = self.array.at(self.index);
-            self.index += 1;
-            return value;
-        }
-    };
-}
-
 test "primitive array" {
-    var validity = try buffer.ValidityBuffer.init(5, testing.allocator);
+    var validity = try buffer.BooleanBuffer.init(5, testing.allocator);
     const values = try buffer.ValueBuffer(i32).init(5, testing.allocator);
 
     validity.set(0);
@@ -100,10 +80,10 @@ test "primitive array" {
     };
     defer array.deinit();
 
-    try testing.expectEqual(array.len(), 5);
-    try testing.expectEqual(array.at(0).?, 1);
-    try testing.expectEqual(array.at(1).?, 2);
-    try testing.expectEqual(array.at(2).?, 3);
-    try testing.expectEqual(array.at(3), null);
-    try testing.expectEqual(array.at(4).?, 5);
+    try testing.expectEqual(5, array.len());
+    try testing.expectEqual(1, array.at(0).?);
+    try testing.expectEqual(2, array.at(1).?);
+    try testing.expectEqual(3, array.at(2).?);
+    try testing.expectEqual(null, array.at(3));
+    try testing.expectEqual(5, array.at(4).?);
 }
