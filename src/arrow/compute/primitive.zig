@@ -1,5 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
+const math = std.math;
 
 const buffer = @import("../array/buffer.zig");
 const PrimitiveArray = @import("../array/primitive.zig").PrimitiveArray;
@@ -44,6 +46,62 @@ pub fn sub(
     allocator: std.mem.Allocator,
 ) !PrimitiveArray(T) {
     return binary_kenel(T, vector_len, sub_, sub_, lhs, rhs, allocator);
+}
+
+fn mul_(comptime T: type, lhs: T, rhs: T) T {
+    return switch (@typeInfo(T)) {
+        .int => lhs *% rhs,
+        .vector => |info| switch (@typeInfo(info.child)) {
+            .int => lhs *% rhs,
+            else => lhs * rhs,
+        },
+        else => lhs * rhs,
+    };
+}
+
+pub fn mul(
+    comptime T: type,
+    comptime vector_len: comptime_int,
+    lhs: PrimitiveArray(T),
+    rhs: PrimitiveArray(T),
+    allocator: std.mem.Allocator,
+) !PrimitiveArray(T) {
+    return binary_kenel(T, vector_len, mul_, mul_, lhs, rhs, allocator);
+}
+
+fn div_(comptime T: type, lhs: T, rhs: T) T {
+    return switch (@typeInfo(T)) {
+        .int => @divTrunc(lhs, rhs),
+        .vector => |info| switch (@typeInfo(info.child)) {
+            .int => @divTrunc(lhs, rhs),
+            else => lhs / rhs,
+        },
+        else => lhs / rhs,
+    };
+}
+
+pub fn div(
+    comptime T: type,
+    comptime vector_len: comptime_int,
+    lhs: PrimitiveArray(T),
+    rhs: PrimitiveArray(T),
+    allocator: std.mem.Allocator,
+) !PrimitiveArray(T) {
+    return binary_kenel(T, vector_len, div_, div_, lhs, rhs, allocator);
+}
+
+fn mod_(comptime T: type, lhs: T, rhs: T) T {
+    return @mod(lhs, rhs);
+}
+
+pub fn mod(
+    comptime T: type,
+    comptime vector_len: comptime_int,
+    lhs: PrimitiveArray(T),
+    rhs: PrimitiveArray(T),
+    allocator: std.mem.Allocator,
+) !PrimitiveArray(T) {
+    return binary_kenel(T, vector_len, mod_, mod_, lhs, rhs, allocator);
 }
 
 // This is a generic kernel for binary operations on primitive arrays. It uses
@@ -110,4 +168,55 @@ fn binary_kenel(
         .values = values,
         .validity = validity,
     };
+}
+
+test "binary operations" {
+    var prng = std.Random.DefaultPrng.init(0);
+    const rng = prng.random();
+
+    const size = 1 << 20;
+
+    inline for ([_]type{ i8, i16, i32, i64, u8, u16, u32, u64, f16, f32, f64 }) |T| {
+        var lhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
+        defer lhs.deinit();
+        var rhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
+        defer rhs.deinit();
+
+        // Ensure no integer overflows or divisions by zero. Modify the denominator.
+        for (lhs.values.slice, rhs.values.slice) |l, *r| {
+            _ = math.divTrunc(T, l, r.*) catch {
+                r.* = 1;
+            };
+        }
+
+        const vector_len = std.simd.suggestVectorLength(T) orelse 8;
+
+        var added = try add(T, vector_len, lhs, rhs, testing.allocator);
+        defer added.deinit();
+        try testing.expectEqual(added.len(), size);
+
+        var subtracted = try sub(T, vector_len, lhs, rhs, testing.allocator);
+        defer subtracted.deinit();
+        try testing.expectEqual(subtracted.len(), size);
+
+        var multiplied = try mul(T, vector_len, lhs, rhs, testing.allocator);
+        defer multiplied.deinit();
+        try testing.expectEqual(multiplied.len(), size);
+
+        var divided = try div(T, vector_len, lhs, rhs, testing.allocator);
+        defer divided.deinit();
+        try testing.expectEqual(divided.len(), size);
+
+        var modded = try mod(T, vector_len, lhs, rhs, testing.allocator);
+        defer modded.deinit();
+        try testing.expectEqual(modded.len(), size);
+
+        for (lhs.values.slice, rhs.values.slice, added.values.slice, subtracted.values.slice, multiplied.values.slice, divided.values.slice, modded.values.slice) |l, r, a, s, m, d, md| {
+            try testing.expect(add_(T, l, r) == a or ((math.isNan(l) or math.isNan(r)) and math.isNan(a)));
+            try testing.expect(sub_(T, l, r) == s or ((math.isNan(l) or math.isNan(r)) and math.isNan(s)));
+            try testing.expect(mul_(T, l, r) == m or ((math.isNan(l) or math.isNan(r)) and math.isNan(m)));
+            try testing.expect(div_(T, l, r) == d or ((math.isNan(l) or math.isNan(r)) and math.isNan(d)));
+            try testing.expect(mod_(T, l, r) == md or ((math.isNan(l) or math.isNan(r)) and math.isNan(md)) or (math.isNan(mod_(T, l, r)) and math.isNan(md)));
+        }
+    }
 }

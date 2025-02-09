@@ -57,10 +57,10 @@ test "layout" {
     };
     defer array.deinit();
 
-    try testing.expect(array.len() == 5);
-    try testing.expect(std.mem.eql(u8, array.at(0).?, "i"));
-    try testing.expect(std.mem.eql(u8, array.at(1).?, "really"));
-    try testing.expect(std.mem.eql(u8, array.at(2).?, "like"));
-    try testing.expect(array.at(3) == null);
-    try testing.expect(std.mem.eql(u8, array.at(4).?, "turtles"));
+    try testing.expectEqual(array.len(), 5);
+    try testing.expectEqualStrings(array.at(0).?, "i");
+    try testing.expectEqualStrings(array.at(1).?, "really");
+    try testing.expectEqualStrings(array.at(2).?, "like");
+    try testing.expectEqual(array.at(3), null);
+    try testing.expectEqualStrings(array.at(4).?, "turtles");
 }
