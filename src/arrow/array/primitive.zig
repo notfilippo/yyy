@@ -10,13 +10,25 @@ pub fn PrimitiveArray(comptime T: type) type {
         const Self = @This();
 
         validity: ?buffer.ValidityBuffer,
-        values: buffer.ValueBuffer(T),
+        values: *buffer.ValueBuffer(T),
 
         pub fn deinit(self: *Self) void {
             self.values.deinit();
             if (self.validity) |*validity| {
                 validity.deinit();
             }
+        }
+
+        pub fn clone(self: *Self) Self {
+            const validity = if (self.validity) |*validity| {
+                return validity.clone();
+            } else {
+                return null;
+            };
+            return .{
+                .values = self.values.clone(),
+                .validity = validity,
+            };
         }
 
         // Returns the value at the specified index.

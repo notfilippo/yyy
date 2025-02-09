@@ -9,8 +9,8 @@ pub fn BinaryArray(comptime O: type) type {
         const Self = @This();
 
         validity: ?buffer.ValidityBuffer,
-        offsets: buffer.ValueBuffer(O),
-        values: buffer.ValueBuffer(u8),
+        offsets: *buffer.ValueBuffer(O),
+        values: *buffer.ValueBuffer(u8),
 
         pub fn deinit(self: *Self) void {
             self.offsets.deinit();

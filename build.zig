@@ -139,4 +139,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    const lldb = b.addSystemCommand(&.{
+        "lldb",
+        // add lldb flags before --
+        "--",
+    });
+    lldb.addArtifactArg(lib_unit_tests);
+
+    const lldb_step = b.step("lldb", "Run the tests in lldb");
+    lldb_step.dependOn(&lldb.step);
 }

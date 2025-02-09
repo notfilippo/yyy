@@ -17,20 +17,26 @@ pub fn ValueBuffer(comptime T: type) type {
         rc: std.atomic.Value(usize),
         allocator: std.mem.Allocator,
 
-        pub fn init(size: usize, allocator: std.mem.Allocator) !Self {
-            const slice = try allocator.alignedAlloc(T, Alignment, size);
-            @memset(slice, 0);
-            return .{
-                .slice = slice,
-                .rc = std.atomic.Value(usize).init(1),
-                .allocator = allocator,
-            };
+        pub fn init(size: usize, allocator: std.mem.Allocator) !*Self {
+            const self = try allocator.create(Self);
+            self.slice = try allocator.alignedAlloc(T, Alignment, size);
+            @memset(self.slice, 0);
+            self.rc = std.atomic.Value(usize).init(1);
+            self.allocator = allocator;
+            return self;
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.rc.fetchSub(1, .seq_cst) == 1) {
+            if (self.rc.fetchSub(1, .release) == 1) {
+                _ = self.rc.load(.acquire);
                 self.allocator.free(self.slice);
+                self.allocator.destroy(self);
             }
+        }
+
+        pub fn clone(self: *Self) *Self {
+            _ = self.rc.fetchAdd(1, .monotonic);
+            return self;
         }
     };
 }
@@ -41,7 +47,7 @@ pub const ValidityBuffer = struct {
     const MaskInt = u8;
     const ShiftInt = std.math.Log2Int(MaskInt);
 
-    masks: ValueBuffer(MaskInt),
+    masks: *ValueBuffer(MaskInt),
     bit_len: usize,
 
     pub fn init(bit_len: usize, allocator: std.mem.Allocator) !Self {
@@ -51,8 +57,15 @@ pub const ValidityBuffer = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.masks.deinit();
+    }
+
+    pub fn clone(self: Self) Self {
+        return .{
+            .masks = self.masks.clone(),
+            .bit_len = self.bit_len,
+        };
     }
 
     /// Returns true if the bit at the specified index is present in the set,
