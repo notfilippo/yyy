@@ -12,14 +12,14 @@ pub fn PrimitiveArray(comptime T: type) type {
         validity: ?buffer.ValidityBuffer,
         values: *buffer.ValueBuffer(T),
 
-        pub fn deinit(self: *Self) void {
+        pub fn deinit(self: Self) void {
             self.values.deinit();
             if (self.validity) |*validity| {
                 validity.deinit();
             }
         }
 
-        pub fn clone(self: *Self) Self {
+        pub fn clone(self: Self) Self {
             const validity = if (self.validity) |*validity| {
                 return validity.clone();
             } else {

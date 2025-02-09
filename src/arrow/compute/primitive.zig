@@ -6,7 +6,7 @@ const math = std.math;
 const buffer = @import("../array/buffer.zig");
 const PrimitiveArray = @import("../array/primitive.zig").PrimitiveArray;
 
-fn add(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+pub fn add(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs +% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
@@ -17,7 +17,7 @@ fn add(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     };
 }
 
-fn sub(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+pub fn sub(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs -% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
@@ -28,7 +28,7 @@ fn sub(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     };
 }
 
-fn mul(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+pub fn mul(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return switch (@typeInfo(@TypeOf(lhs))) {
         .int => lhs *% rhs,
         .vector => |info| switch (@typeInfo(info.child)) {
@@ -39,7 +39,7 @@ fn mul(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     };
 }
 
-fn div(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+pub fn div(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return switch (@typeInfo(@TypeOf(lhs))) {
         .int => @divTrunc(lhs, rhs),
         .vector => |info| switch (@typeInfo(info.child)) {
@@ -50,24 +50,26 @@ fn div(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     };
 }
 
-fn mod(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
+pub fn mod(lhs: anytype, rhs: anytype) @TypeOf(lhs) {
     return @mod(lhs, rhs);
 }
 
-// This is a generic kernel for binary operations on primitive arrays. It uses
-// SIMD vector operations when possible, and falls back to scalar operations
-// when the array length is not a multiple of the vector length.
-fn binary_kenel(
+// binaryKernel performs a binary operation between two values, either scalar or
+// array of values of the same type.
+// The operation is executed in SIMD vector operations as much as possible.
+// The result is stored in a new PrimitiveArray.
+pub fn binaryKernel(
     comptime T: type,
     comptime vector_len: comptime_int,
     comptime op: anytype,
-    lhs: PrimitiveArray(T),
-    rhs: PrimitiveArray(T),
+    lhs: anytype,
+    rhs: anytype,
     allocator: std.mem.Allocator,
 ) !PrimitiveArray(T) {
-    assert(lhs.len() == lhs.len());
+    comptime assert(@TypeOf(lhs) == PrimitiveArray(T) or @TypeOf(rhs) == PrimitiveArray(T));
 
-    const len = lhs.len();
+    const len = if (@TypeOf(lhs) == PrimitiveArray(T)) lhs.len() else rhs.len();
+
     const parallel = len / vector_len;
 
     const values = try buffer.ValueBuffer(T).init(len, allocator);
@@ -78,8 +80,19 @@ fn binary_kenel(
     while (i < parallel) : (i += 1) {
         const start = i * vector_len;
         const end = start + vector_len;
-        const lv: @Vector(vector_len, T) = lhs.values.slice[start..end][0..vector_len].*;
-        const rv: @Vector(vector_len, T) = rhs.values.slice[start..end][0..vector_len].*;
+
+        const lv: @Vector(vector_len, T) = switch (@TypeOf(lhs)) {
+            PrimitiveArray(T) => lhs.values.slice[start..end][0..vector_len].*,
+            T => @splat(lhs),
+            else => @compileError("Unsupported type"),
+        };
+
+        const rv: @Vector(vector_len, T) = switch (@TypeOf(rhs)) {
+            PrimitiveArray(T) => rhs.values.slice[start..end][0..vector_len].*,
+            T => @splat(rhs),
+            else => @compileError("Unsupported type"),
+        };
+
         const out = @call(.always_inline, op, .{ lv, rv });
         values.slice[start..end][0..vector_len].* = out;
     }
@@ -91,105 +104,45 @@ fn binary_kenel(
     i = 0;
     while (i < left) : (i += 1) {
         const index = offset +% i;
-        values.slice[index] = @call(.always_inline, op, .{ lhs.values.slice[index], rhs.values.slice[index] });
+        const lv = switch (@TypeOf(lhs)) {
+            PrimitiveArray(T) => lhs.values.slice[index],
+            T => lhs,
+            else => @compileError("Unsupported type"),
+        };
+        const rv = switch (@TypeOf(rhs)) {
+            PrimitiveArray(T) => rhs.values.slice[index],
+            T => rhs,
+            else => @compileError("Unsupported type"),
+        };
+        values.slice[index] = @call(.always_inline, op, .{ lv, rv });
     }
 
     // Intersect the validity buffer of lhs with the validity buffer of rhs.
 
     var validity: ?buffer.ValidityBuffer = null;
 
-    if (lhs.validity != null and rhs.validity != null) {
+    const lhs_validity = switch (@TypeOf(lhs)) {
+        PrimitiveArray(T) => lhs.validity,
+        else => null,
+    };
+
+    const rhs_validity = switch (@TypeOf(rhs)) {
+        PrimitiveArray(T) => rhs.validity,
+        else => null,
+    };
+
+    if (lhs_validity != null and rhs_validity != null) {
         // Both validity bitmaps are set.
         validity = try buffer.ValidityBuffer.init(len, allocator);
-        @memcpy(validity.?.masks.slice, lhs.validity.?.masks.slice);
-        validity.?.setIntersection(rhs.validity.?);
-    } else if (lhs.validity != null and rhs.validity == null) {
+        @memcpy(validity.?.masks.slice, lhs_validity.?.masks.slice);
+        validity.?.setIntersection(rhs_validity.?);
+    } else if (lhs_validity != null and rhs_validity == null) {
         // Only lhs validity is set.
-        validity = try buffer.ValidityBuffer.init(len, allocator);
-        @memcpy(validity.?.masks.slice, lhs.validity.?.masks.slice);
-    } else if (lhs.validity == null and rhs.validity != null) {
+        validity = lhs_validity.?.clone();
+    } else if (lhs_validity == null and rhs_validity != null) {
         // Only rhs validity is set.
-        validity = try buffer.ValidityBuffer.init(len, allocator);
-        @memcpy(validity.?.masks.slice, rhs.validity.?.masks.slice);
+        validity = rhs_validity.?.clone();
     }
-
-    return PrimitiveArray(T){
-        .values = values,
-        .validity = validity,
-    };
-}
-
-fn binary_scalar_right_kernel(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    comptime op: anytype,
-    lhs: PrimitiveArray(T),
-    rhs: T,
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    const len = lhs.len();
-    const parallel = len / vector_len;
-
-    const values = try buffer.ValueBuffer(T).init(len, allocator);
-
-    var i: usize = 0;
-    while (i < parallel) : (i += 1) {
-        const start = i * vector_len;
-        const end = start + vector_len;
-        const lv: @Vector(vector_len, T) = lhs.values.slice[start..end][0..vector_len].*;
-        const rv: @Vector(vector_len, T) = @splat(rhs);
-        const out = @call(.always_inline, op, .{ lv, rv });
-        values.slice[start..end][0..vector_len].* = out;
-    }
-
-    const offset = i * vector_len;
-    const left = len % vector_len;
-    i = 0;
-    while (i < left) : (i += 1) {
-        const index = offset +% i;
-        values.slice[index] = @call(.always_inline, op, .{ lhs.values.slice[index], rhs });
-    }
-
-    const validity = if (lhs.validity) |validity| validity.clone() else null;
-
-    return PrimitiveArray(T){
-        .values = values,
-        .validity = validity,
-    };
-}
-
-fn binary_scalar_left_kernel(
-    comptime T: type,
-    comptime vector_len: comptime_int,
-    comptime op: anytype,
-    lhs: T,
-    rhs: PrimitiveArray(T),
-    allocator: std.mem.Allocator,
-) !PrimitiveArray(T) {
-    const len = rhs.len();
-    const parallel = len / vector_len;
-
-    const values = try buffer.ValueBuffer(T).init(len, allocator);
-
-    var i: usize = 0;
-    while (i < parallel) : (i += 1) {
-        const start = i * vector_len;
-        const end = start + vector_len;
-        const lv: @Vector(vector_len, T) = @splat(lhs);
-        const rv: @Vector(vector_len, T) = rhs.values.slice[start..end][0..vector_len].*;
-        const out = @call(.always_inline, op, .{ lv, rv });
-        values.slice[start..end][0..vector_len].* = out;
-    }
-
-    const offset = i * vector_len;
-    const left = len % vector_len;
-    i = 0;
-    while (i < left) : (i += 1) {
-        const index = offset +% i;
-        values.slice[index] = @call(.always_inline, op, .{ lhs, rhs.values.slice[index] });
-    }
-
-    const validity = if (rhs.validity) |validity| validity.clone() else null;
 
     return PrimitiveArray(T){
         .values = values,
@@ -204,9 +157,9 @@ test "binary operations between arrays" {
     const size = 1 << 20;
 
     inline for ([_]type{ i8, i16, i32, i64, u8, u16, u32, u64, f16, f32, f64 }) |T| {
-        var lhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
+        const lhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
         defer lhs.deinit();
-        var rhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
+        const rhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
         defer rhs.deinit();
 
         // Ensure no integer overflows or divisions by zero. Modify the denominator.
@@ -218,23 +171,23 @@ test "binary operations between arrays" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try binary_kenel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try binary_kenel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try binary_kenel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try binary_kenel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try binary_kenel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
@@ -262,23 +215,23 @@ test "binary scalar right kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try binary_scalar_right_kernel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try binary_scalar_right_kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try binary_scalar_right_kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try binary_scalar_right_kernel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try binary_scalar_right_kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 
@@ -300,7 +253,7 @@ test "binary scalar left kernel" {
 
     inline for ([_]type{ i8, i16, i32, i64, u8, u16, u32, u64, f16, f32, f64 }) |T| {
         const lhs: T = 2;
-        var rhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
+        const rhs = try PrimitiveArray(T).random(rng, size, testing.allocator);
         defer rhs.deinit();
 
         // Ensure no integer overflows or divisions by zero. Modify the denominator.
@@ -312,23 +265,23 @@ test "binary scalar left kernel" {
 
         const vector_len = std.simd.suggestVectorLength(T) orelse 8;
 
-        var added = try binary_scalar_left_kernel(T, vector_len, add, lhs, rhs, testing.allocator);
+        const added = try binaryKernel(T, vector_len, add, lhs, rhs, testing.allocator);
         defer added.deinit();
         try testing.expectEqual(added.len(), size);
 
-        var subtracted = try binary_scalar_left_kernel(T, vector_len, sub, lhs, rhs, testing.allocator);
+        const subtracted = try binaryKernel(T, vector_len, sub, lhs, rhs, testing.allocator);
         defer subtracted.deinit();
         try testing.expectEqual(subtracted.len(), size);
 
-        var multiplied = try binary_scalar_left_kernel(T, vector_len, mul, lhs, rhs, testing.allocator);
+        const multiplied = try binaryKernel(T, vector_len, mul, lhs, rhs, testing.allocator);
         defer multiplied.deinit();
         try testing.expectEqual(multiplied.len(), size);
 
-        var divided = try binary_scalar_left_kernel(T, vector_len, div, lhs, rhs, testing.allocator);
+        const divided = try binaryKernel(T, vector_len, div, lhs, rhs, testing.allocator);
         defer divided.deinit();
         try testing.expectEqual(divided.len(), size);
 
-        var modded = try binary_scalar_left_kernel(T, vector_len, mod, lhs, rhs, testing.allocator);
+        const modded = try binaryKernel(T, vector_len, mod, lhs, rhs, testing.allocator);
         defer modded.deinit();
         try testing.expectEqual(modded.len(), size);
 

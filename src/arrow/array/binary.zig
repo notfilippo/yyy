@@ -12,7 +12,7 @@ pub fn BinaryArray(comptime O: type) type {
         offsets: *buffer.ValueBuffer(O),
         values: *buffer.ValueBuffer(u8),
 
-        pub fn deinit(self: *Self) void {
+        pub fn deinit(self: Self) void {
             self.offsets.deinit();
             self.values.deinit();
             if (self.validity) |*validity| {
