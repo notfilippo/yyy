@@ -46,11 +46,13 @@ pub fn kernel(
 
     const len = if (@TypeOf(lhs) == PrimitiveArray(T)) lhs.len() else rhs.len();
 
-    const parallel = len / vector_len;
+    const parallel = if (vector_len > 0) len / vector_len else 0;
 
     const values = try buffer.BooleanBuffer.init(len, allocator);
 
     const PackedMask = @Type(.{ .int = .{ .bits = vector_len, .signedness = .unsigned } });
+
+    // Execute as many SIMD vector operations as possible...
 
     var i: usize = 0;
     while (i < parallel) : (i += 1) {
@@ -75,6 +77,8 @@ pub fn kernel(
         @memcpy(values.masks.slice[buffer.BooleanBuffer.maskIndex(start)..buffer.BooleanBuffer.maskIndex(end)], std.mem.asBytes(&mask));
     }
 
+    // ... and if left > 0, complete the calculation with scalar operations.
+
     const offset = i * vector_len;
     const left = len % vector_len;
     i = 0;
@@ -93,9 +97,36 @@ pub fn kernel(
         values.setOrClear(index, @call(.always_inline, op, .{ bool, lv, rv }));
     }
 
+    // Intersect the validity buffer of lhs with the validity buffer of rhs.
+
+    var validity: ?buffer.BooleanBuffer = null;
+
+    const lhs_validity = switch (@TypeOf(lhs)) {
+        PrimitiveArray(T) => lhs.validity,
+        else => null,
+    };
+
+    const rhs_validity = switch (@TypeOf(rhs)) {
+        PrimitiveArray(T) => rhs.validity,
+        else => null,
+    };
+
+    if (lhs_validity != null and rhs_validity != null) {
+        // Both validity bitmaps are set.
+        validity = try buffer.BooleanBuffer.init(len, allocator);
+        @memcpy(validity.?.masks.slice, lhs_validity.?.masks.slice);
+        validity.?.setIntersection(rhs_validity.?);
+    } else if (lhs_validity != null and rhs_validity == null) {
+        // Only lhs validity is set.
+        validity = lhs_validity.?.clone();
+    } else if (lhs_validity == null and rhs_validity != null) {
+        // Only rhs validity is set.
+        validity = rhs_validity.?.clone();
+    }
+
     return BooleanArray{
         .values = values,
-        .validity = null,
+        .validity = validity,
     };
 }
 

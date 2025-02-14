@@ -66,7 +66,7 @@ pub fn kernel(
 
     const len = if (@TypeOf(lhs) == PrimitiveArray(T)) lhs.len() else rhs.len();
 
-    const parallel = len / vector_len;
+    const parallel = if (vector_len > 0) len / vector_len else 0;
 
     const values = try buffer.ValueBuffer(T).init(len, allocator);
 
