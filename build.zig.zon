@@ -22,12 +22,7 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
-    .dependencies = .{
-        .gremlin = .{
-            .url = "https://github.com/octopus-foundation/gremlin.zig/archive/refs/tags/0.0.0.tar.gz",
-            .hash = "1220a59f39767373cb41cd234679b99f92cbc0d55ade64cd01d3c8c1b90c1183fdaa",
-        },
-    },
+    .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",

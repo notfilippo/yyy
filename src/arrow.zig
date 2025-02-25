@@ -6,3 +6,6 @@ pub const BooleanBuffer = @import("arrow/array/buffer.zig").BooleanBuffer;
 
 pub const numeric = @import("arrow/compute/numeric.zig");
 pub const compare = @import("arrow/compute/compare.zig");
+
+pub const relation = @import("arrow/plan/relation.zig");
+pub const predicate = @import("arrow/plan/predicate.zig");

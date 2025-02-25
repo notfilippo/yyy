@@ -1,5 +1,4 @@
 const std = @import("std");
-const ProtoGenStep = @import("gremlin").ProtoGenStep;
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
@@ -15,26 +14,6 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
-
-    const gremlin_dep = b.dependency("gremlin", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("gremlin");
-
-    const wf = b.addWriteFiles();
-
-    _ = wf.addCopyFile(b.path("vendor/protobuf/src/google/protobuf/any.proto"), "google/protobuf/any.proto");
-    _ = wf.addCopyFile(b.path("vendor/protobuf/src/google/protobuf/empty.proto"), "google/protobuf/empty.proto");
-    _ = wf.addCopyDirectory(b.path("vendor/substrait/proto"), "", .{ .include_extensions = &[_][]const u8{"proto"} });
-
-    const protobuf = ProtoGenStep.create(
-        b,
-        .{
-            .proto_sources = wf.getDirectory(), // Directory containing .proto files
-            .target = b.path("src/gen"), // Output directory for generated Zig code
-        },
-    );
-    protobuf.step.dependOn(&wf.step);
 
     // This creates a "module", which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -73,9 +52,6 @@ pub fn build(b: *std.Build) void {
         .root_module = lib_mod,
     });
 
-    lib.root_module.addImport("gremlin", gremlin_dep);
-    lib.step.dependOn(&protobuf.step);
-
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
     // running `zig build`).
@@ -87,9 +63,6 @@ pub fn build(b: *std.Build) void {
         .name = "yyy",
         .root_module = exe_mod,
     });
-
-    exe.root_module.addImport("gremlin", gremlin_dep);
-    exe.step.dependOn(&protobuf.step);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

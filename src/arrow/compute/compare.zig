@@ -136,7 +136,7 @@ test "kernel" {
     const rhs = try PrimitiveArray(i32).fromSlice(&[_]i32{ 1, 2, 3, 4, 0, 6, 7, 8, 8 }, testing.allocator);
     defer rhs.deinit();
 
-    const vector_len = @max(8, std.simd.suggestVectorLength(i32) orelse 8);
+    const vector_len = @max(std.simd.suggestVectorLength(i32) orelse 8, 8);
 
     const result = try kernel(i32, vector_len, eq, lhs, rhs, testing.allocator);
     defer result.deinit();
