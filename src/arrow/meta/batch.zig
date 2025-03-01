@@ -6,4 +6,5 @@ pub const RecordBatch = struct {
 
     schema: schema.Schema,
     columns: []const datum.Array,
+    rows: usize,
 };

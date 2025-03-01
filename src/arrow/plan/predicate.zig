@@ -2,16 +2,14 @@ const std = @import("std");
 const batch = @import("../meta/batch.zig");
 const datum = @import("../meta//datum.zig");
 
-const Error = error{
-    Invalid,
-};
-
 pub const Predicate = union(enum) {
     const Self = @This();
 
     binary: Binary,
     reference: Reference,
     scalar: Scalar,
+
+    const Error = std.mem.Allocator.Error || error{};
 
     pub fn evaluate(self: Self, rb: batch.RecordBatch, allocator: std.mem.Allocator) Error!datum.Datum {
         switch (self) {
@@ -31,12 +29,12 @@ pub const Binary = struct {
     left: *const Predicate,
     right: *const Predicate,
 
-    fn evaluate(self: Binary, rb: batch.RecordBatch, allocator: std.mem.Allocator) Error!datum.Datum {
+    fn evaluate(self: Binary, rb: batch.RecordBatch, allocator: std.mem.Allocator) Predicate.Error!datum.Datum {
         const left = try self.left.evaluate(rb, allocator);
         const right = try self.right.evaluate(rb, allocator);
 
         switch (self.op) {
-            Op.eq => return try datum.eq(left, right, allocator),
+            Op.eq => return try datum.cmp(left, right, allocator),
         }
 
         return left;
@@ -46,7 +44,7 @@ pub const Binary = struct {
 pub const Reference = struct {
     index: usize,
 
-    fn evaluate(self: Reference, rb: batch.RecordBatch, _: std.mem.Allocator) Error!datum.Datum {
+    fn evaluate(self: Reference, rb: batch.RecordBatch, _: std.mem.Allocator) Predicate.Error!datum.Datum {
         return rb.columns[self.index].datum();
     }
 };
@@ -54,7 +52,7 @@ pub const Reference = struct {
 pub const Scalar = struct {
     value: datum.Scalar,
 
-    fn evaluate(self: Scalar, _: batch.RecordBatch, _: std.mem.Allocator) Error!datum.Datum {
+    fn evaluate(self: Scalar, _: batch.RecordBatch, _: std.mem.Allocator) Predicate.Error!datum.Datum {
         return self.value.datum();
     }
 };

@@ -27,7 +27,6 @@ pub const DataType = union(enum) {
     f16,
     f32,
     f64,
-    utf8,
     binary,
 
     pub fn fromType(comptime T: type) Self {
@@ -45,7 +44,7 @@ pub const DataType = union(enum) {
             f16 => return .f16,
             f32 => return .f32,
             f64 => return .f64,
-            []const u8 => return .utf8,
+            []const u8 => return .binary,
         }
     }
 };

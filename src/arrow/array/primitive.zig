@@ -65,14 +65,14 @@ pub fn PrimitiveArray(comptime T: type) type {
 
 test "primitive array" {
     var validity = try buffer.BooleanBuffer.init(5, testing.allocator);
-    const values = try buffer.ValueBuffer(i32).init(5, testing.allocator);
 
     validity.set(0);
     validity.set(1);
     validity.set(2);
     validity.set(4);
 
-    @memcpy(values.slice, &[_]i32{ 1, 2, 3, 0, 5 });
+    const values = try buffer.ValueBuffer(i32).init(5, testing.allocator);
+    @memcpy(values.slice, &[_]i32{ 1, 2, 3, 9, 5 });
 
     var array = primitive.PrimitiveArray(i32){
         .validity = validity,

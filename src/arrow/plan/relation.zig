@@ -3,10 +3,6 @@ const predicate = @import("predicate.zig");
 const schema = @import("../meta/schema.zig");
 const batch = @import("../meta/batch.zig");
 
-const Error = error{
-    Invalid,
-};
-
 pub const Relation = union(enum) {
     const Self = @This();
 
@@ -14,11 +10,13 @@ pub const Relation = union(enum) {
     project: Project,
     read: Read,
 
-    fn execute(self: Self, rb: batch.RecordBatch) !?batch.RecordBatch {
+    pub const Error = std.mem.Allocator.Error || error{};
+
+    fn execute(self: Self, rb: batch.RecordBatch, allocator: std.mem.Allocator) Relation.Error!?batch.RecordBatch {
         switch (self) {
-            .filter => return self.filter.execute(rb),
-            .project => return self.project.execute(rb),
-            .read => return self.read.execute(rb),
+            .filter => return self.filter.execute(rb, allocator),
+            .project => return self.project.execute(rb, allocator),
+            .read => return self.read.execute(rb, allocator),
         }
     }
 };
@@ -27,10 +25,11 @@ pub const Filter = struct {
     input: *const Relation,
     predicate: predicate.Predicate,
 
-    fn execute(self: Filter, rb: batch.RecordBatch) Error!?batch.RecordBatch {
-        const input = try self.input.execute(rb);
-        const result = try self.predicate.evaluate(rb, std.heap.page_allocator);
-        std.debug.print("{any}", .{result});
+    fn execute(self: Filter, rb: batch.RecordBatch, allocator: std.mem.Allocator) Relation.Error!?batch.RecordBatch {
+        const input = try self.input.execute(rb, allocator);
+        const result = try self.predicate.evaluate(rb, allocator);
+        std.debug.print("{any}\n", .{result});
+        result.deinit();
         return input;
     }
 };
@@ -39,14 +38,14 @@ const Project = struct {
     input: *const Relation,
     projection: []predicate.Predicate,
 
-    fn execute(self: Project, rb: batch.RecordBatch) Error!?batch.RecordBatch {
-        const input = try self.input.execute(rb);
+    fn execute(self: Project, rb: batch.RecordBatch, allocator: std.mem.Allocator) Relation.Error!?batch.RecordBatch {
+        const input = try self.input.execute(rb, allocator);
         return input;
     }
 };
 
 const Read = struct {
-    fn execute(_: Read, rb: batch.RecordBatch) Error!?batch.RecordBatch {
+    fn execute(_: Read, rb: batch.RecordBatch, _: std.mem.Allocator) Relation.Error!?batch.RecordBatch {
         return rb;
     }
 };
@@ -83,8 +82,9 @@ test "relation" {
                 },
             },
         },
-        .columns = &.{.{ .inner = @constCast(&input), .dt = schema.DataType.i32 }},
-    });
+        .columns = &.{.{ .i32 = input }},
+        .rows = input.len(),
+    }, testing.allocator);
 
-    std.debug.print("{any}", .{result});
+    std.debug.print("{any}\n", .{result});
 }
