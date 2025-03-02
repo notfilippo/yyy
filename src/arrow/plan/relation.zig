@@ -10,7 +10,7 @@ pub const Relation = union(enum) {
     project: Project,
     read: Read,
 
-    pub const Error = std.mem.Allocator.Error || error{};
+    pub const Error = std.mem.Allocator.Error || error{Invalid};
 
     fn execute(self: Self, rb: batch.RecordBatch, allocator: std.mem.Allocator) Relation.Error!?batch.RecordBatch {
         switch (self) {

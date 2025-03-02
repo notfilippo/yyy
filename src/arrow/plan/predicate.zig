@@ -9,7 +9,7 @@ pub const Predicate = union(enum) {
     reference: Reference,
     scalar: Scalar,
 
-    const Error = std.mem.Allocator.Error || error{};
+    const Error = std.mem.Allocator.Error || error{Invalid};
 
     pub fn evaluate(self: Self, rb: batch.RecordBatch, allocator: std.mem.Allocator) Error!datum.Datum {
         switch (self) {
@@ -45,7 +45,7 @@ pub const Reference = struct {
     index: usize,
 
     fn evaluate(self: Reference, rb: batch.RecordBatch, _: std.mem.Allocator) Predicate.Error!datum.Datum {
-        return rb.columns[self.index].datum();
+        return datum.Datum{ .array = rb.columns[self.index] };
     }
 };
 
@@ -53,6 +53,6 @@ pub const Scalar = struct {
     value: datum.Scalar,
 
     fn evaluate(self: Scalar, _: batch.RecordBatch, _: std.mem.Allocator) Predicate.Error!datum.Datum {
-        return self.value.datum();
+        return datum.Datum{ .scalar = self.value };
     }
 };

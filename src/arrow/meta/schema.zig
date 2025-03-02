@@ -11,10 +11,9 @@ pub const Field = struct {
     dt: DataType,
 };
 
-pub const DataType = union(enum) {
+pub const DataType = enum {
     const Self = @This();
 
-    null,
     boolean,
     i8,
     i16,
@@ -29,22 +28,21 @@ pub const DataType = union(enum) {
     f64,
     binary,
 
-    pub fn fromType(comptime T: type) Self {
-        switch (T) {
-            void => return .null,
-            bool => return .boolean,
-            i8 => return .i8,
-            i16 => return .i16,
-            i32 => return .i32,
-            i64 => return .i64,
-            u8 => return .ui8,
-            u16 => return .u16,
-            u32 => return .u32,
-            u64 => return .u64,
-            f16 => return .f16,
-            f32 => return .f32,
-            f64 => return .f64,
-            []const u8 => return .binary,
-        }
+    pub fn toType(comptime self: Self) type {
+        return switch (self) {
+            .boolean => bool,
+            .i8 => i8,
+            .i16 => i16,
+            .i32 => i32,
+            .i64 => i64,
+            .u8 => u8,
+            .u16 => u16,
+            .u32 => u32,
+            .u64 => u64,
+            .f16 => f16,
+            .f32 => f32,
+            .f64 => f64,
+            .binary => []const u8,
+        };
     }
 };
