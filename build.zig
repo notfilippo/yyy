@@ -1,105 +1,143 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
-pub fn build(b: *std.Build) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    // This creates a "module", which represents a collection of source files alongside
-    // some compilation options, such as optimization mode and linked system libraries.
-    // Every executable or library we compile will be based on one or more modules.
     const lib_mod = b.createModule(.{
-        // `root_source_file` is the Zig "entry point" of the module. If a module
-        // only contains e.g. external object files, you can make this `null`.
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const nanopb_dep = b.dependency("nanopb", .{
+    const nanopb_upstream = b.dependency("nanopb", .{});
+    const substrait_upstream = b.dependency("substrait", .{});
+    const protobuf_upstream = b.dependency("protobuf", .{});
+
+    const nanopb = b.addStaticLibrary(.{
+        .name = "nanopb",
         .target = target,
         .optimize = optimize,
     });
-    lib_mod.linkLibrary(nanopb_dep.artifact("nanopb"));
 
-    // We will also create a module for our other entry point, 'main.zig'.
+    nanopb.linkLibC();
+
+    nanopb.addCSourceFiles(.{
+        .root = nanopb_upstream.path(""),
+        .files = &.{ "pb_common.c", "pb_decode.c", "pb_encode.c" },
+        .flags = &.{},
+    });
+
+    const headers: []const []const u8 = &.{ "pb.h", "pb_common.h", "pb_decode.h", "pb_encode.h" };
+    inline for (headers) |header| {
+        nanopb.installHeader(
+            nanopb_upstream.path(header),
+            header,
+        );
+    }
+
+    const protobuf_protos: []const []const u8 = &.{
+        "google/protobuf/any",
+        "google/protobuf/empty",
+    };
+
+    const protobuf_protos_lib = b.addStaticLibrary(.{
+        .name = "protobuf",
+        .target = target,
+        .optimize = optimize,
+    });
+
+    protobuf_protos_lib.linkLibC();
+    protobuf_protos_lib.addIncludePath(b.path("proto"));
+
+    inline for (protobuf_protos) |proto_file| {
+        const source = std.fmt.comptimePrint("proto/{s}.pb.c", .{proto_file});
+        protobuf_protos_lib.addCSourceFile(.{ .file = b.path(source) });
+    }
+
+    inline for (protobuf_protos) |proto_file| {
+        const header = std.fmt.comptimePrint("proto/{s}.pb.h", .{proto_file});
+        protobuf_protos_lib.installHeader(
+            b.path(header),
+            b.pathJoin(&.{header}),
+        );
+    }
+
+    protobuf_protos_lib.linkLibrary(nanopb);
+
+    const substrait_protos: []const []const u8 = &.{
+        "substrait/algebra",
+        "substrait/capabilities",
+        "substrait/extended_expression",
+        "substrait/function",
+        "substrait/parameterized_types",
+        "substrait/plan",
+        "substrait/type",
+        "substrait/type_expressions",
+        "substrait/extensions/extensions",
+    };
+
+    const substrait_protos_lib = b.addStaticLibrary(.{
+        .name = "substrait",
+        .target = target,
+        .optimize = optimize,
+    });
+
+    substrait_protos_lib.linkLibC();
+    substrait_protos_lib.addIncludePath(b.path("proto"));
+
+    inline for (substrait_protos) |proto_file| {
+        const source = std.fmt.comptimePrint("proto/{s}.pb.c", .{proto_file});
+        substrait_protos_lib.addCSourceFile(.{ .file = b.path(source) });
+    }
+
+    inline for (substrait_protos) |proto_file| {
+        const header = std.fmt.comptimePrint("proto/{s}.pb.h", .{proto_file});
+        substrait_protos_lib.installHeader(
+            b.path(header),
+            b.pathJoin(&.{header}),
+        );
+    }
+
+    substrait_protos_lib.linkLibrary(nanopb);
+    substrait_protos_lib.linkLibrary(protobuf_protos_lib);
+
+    lib_mod.linkLibrary(substrait_protos_lib);
+    lib_mod.addIncludePath(b.path("proto"));
+    lib_mod.addIncludePath(nanopb_upstream.path(""));
+
     const exe_mod = b.createModule(.{
-        // `root_source_file` is the Zig "entry point" of the module. If a module
-        // only contains e.g. external object files, you can make this `null`.
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    // Modules can depend on one another using the `std.Build.Module.addImport` function.
-    // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
-    // file path. In this case, we set up `exe_mod` to import `lib_mod`.
     exe_mod.addImport("yyy_lib", lib_mod);
 
-    // Now, we will create a static library based on the module we created above.
-    // This creates a `std.Build.Step.Compile`, which is the build step responsible
-    // for actually invoking the compiler.
     const lib = b.addStaticLibrary(.{
         .name = "yyy",
         .root_module = lib_mod,
     });
-
-    // This declares intent for the library to be installed into the standard
-    // location when the user invokes the "install" step (the default step when
-    // running `zig build`).
     b.installArtifact(lib);
 
-    // This creates another `std.Build.Step.Compile`, but this one builds an executable
-    // rather than a static library.
     const exe = b.addExecutable(.{
         .name = "yyy",
         .root_module = exe_mod,
     });
-
-    // This declares intent for the executable to be installed into the
-    // standard location when the user invokes the "install" step (the default
-    // step when running `zig build`).
     b.installArtifact(exe);
 
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
     const run_cmd = b.addRunArtifact(exe);
 
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
     run_cmd.step.dependOn(b.getInstallStep());
 
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    // Creates a step for unit testing. This only builds the test executable
-    // but does not run it.
     const lib_unit_tests = b.addTest(.{
         .root_module = lib_mod,
     });
@@ -112,20 +150,50 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 
     const lldb = b.addSystemCommand(&.{
         "lldb",
-        // add lldb flags before --
         "--",
     });
     lldb.addArtifactArg(lib_unit_tests);
 
     const lldb_step = b.step("lldb", "Run the tests in lldb");
     lldb_step.dependOn(&lldb.step);
+
+    const protobuf_protos_build = b.addSystemCommand(&.{"python3"});
+    protobuf_protos_build.addFileArg(nanopb_upstream.path("generator/nanopb_generator.py"));
+    protobuf_protos_build.addArgs(&.{
+        "--custom-style",
+        "proto/style.NamingStyle",
+        "-Dproto",
+        "-I",
+    });
+    protobuf_protos_build.addFileArg(protobuf_upstream.path("src"));
+
+    inline for (protobuf_protos) |proto_file| {
+        const path = std.fmt.comptimePrint("{s}.proto", .{proto_file});
+        protobuf_protos_build.addFileArg(protobuf_upstream.path("src").path(b, path));
+    }
+
+    const substrait_proto_build = b.addSystemCommand(&.{"python3"});
+    substrait_proto_build.addFileArg(nanopb_upstream.path("generator/nanopb_generator.py"));
+    substrait_proto_build.addArgs(&.{
+        "--custom-style",
+        "proto/style.NamingStyle",
+        "-Dproto",
+        "-I",
+    });
+    substrait_proto_build.addFileArg(substrait_upstream.path("proto"));
+
+    inline for (substrait_protos) |proto_file| {
+        const path = std.fmt.comptimePrint("{s}.proto", .{proto_file});
+        substrait_proto_build.addFileArg(substrait_upstream.path("proto").path(b, path));
+    }
+
+    const proto_step = b.step("proto", "Generate protobuf files");
+    proto_step.dependOn(&protobuf_protos_build.step);
+    proto_step.dependOn(&substrait_proto_build.step);
 }

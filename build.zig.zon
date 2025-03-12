@@ -4,8 +4,16 @@
     .fingerprint = 0x734581eafd24e7a5,
     .dependencies = .{
         .nanopb = .{
-            .url = "git+https://github.com/notfilippo/nanopb-zig?ref=0.4.9.1+0.14.0#506433190de5966c8bdee4abcfe1d2f6606feccc",
-            .hash = "nanopb-0.0.0-yCFb8n0IAAAWWwJ5UydIOdOa06pfVM9gTCt4uhxWYdWu",
+            .url = "git+https://github.com/nanopb/nanopb?ref=master#e00d04e2c575c19b7e582c8713be2a42098a8c87",
+            .hash = "N-V-__8AAHgFKQAWcd2nhEcnbct5wkWhFhR9j54eO-ydIe3f",
+        },
+        .protobuf = .{
+            .url = "git+https://github.com/protocolbuffers/protobuf?ref=v30.0#d295af5c3002c08e1bfd9d7f9e175d0a4d015f1e",
+            .hash = "N-V-__8AAOWrZQWvpq_FX-CJ6LsYpRnSZPcHNAKXhSJLXpCB",
+        },
+        .substrait = .{
+            .url = "git+https://github.com/substrait-io/substrait?ref=v0.68.0#af532c7a96abcb76cd72e5eca5a6852e9c30b01f",
+            .hash = "N-V-__8AABhxFACXLKOsRY6CQbfXe0RWvD-2_eU2tqQAL9uS",
         },
     },
     .paths = .{
