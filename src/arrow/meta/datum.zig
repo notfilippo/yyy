@@ -71,25 +71,29 @@ pub const Scalar = union(schema.DataType) {
     binary: []const u8,
 };
 
-pub fn cmp_do(comptime dt: schema.DataType, left: Datum, right: Datum, allocator: std.mem.Allocator) Datum.Error!Datum {
+pub fn cmp_do(comptime dt: schema.DataType, comptime op: anytype, left: Datum, right: Datum, allocator: std.mem.Allocator) Datum.Error!Datum {
     if (left == .scalar and right == .scalar) {
-        return Datum{ .scalar = Scalar{ .boolean = compare.eq(bool, @field(left.scalar, @tagName(dt)), @field(right.scalar, @tagName(dt))) } };
+        return Datum{ .scalar = Scalar{ .boolean = @call(.always_inline, op, .{
+            bool,
+            @field(left.scalar, @tagName(dt)),
+            @field(right.scalar, @tagName(dt)),
+        }) } };
     }
 
     const array = switch (left) {
         .array => |lvalue| switch (right) {
-            inline else => |rvalue| try compare.kernel(dt.toType(), 8, compare.eq, @field(lvalue, @tagName(dt)), @field(rvalue, @tagName(dt)), allocator),
+            inline else => |rvalue| try compare.kernel(dt.toType(), 8, op, @field(lvalue, @tagName(dt)), @field(rvalue, @tagName(dt)), allocator),
         },
         .scalar => |lvalue| switch (right) {
-            .array => |rvalue| try compare.kernel(dt.toType(), 8, compare.eq, @field(lvalue, @tagName(dt)), @field(rvalue, @tagName(dt)), allocator),
-            .scalar => unreachable,
+            .array => |rvalue| try compare.kernel(dt.toType(), 8, op, @field(lvalue, @tagName(dt)), @field(rvalue, @tagName(dt)), allocator),
+            .scalar => unreachable, // handled above
         },
     };
 
     return Datum{ .array = Array{ .boolean = array } };
 }
 
-pub fn cmp(left: Datum, right: Datum, allocator: std.mem.Allocator) Datum.Error!Datum {
+pub fn cmp(comptime op: anytype, left: Datum, right: Datum, allocator: std.mem.Allocator) Datum.Error!Datum {
     const ltag = switch (left) {
         .array => |value| std.meta.activeTag(value),
         .scalar => |value| std.meta.activeTag(value),
@@ -107,6 +111,6 @@ pub fn cmp(left: Datum, right: Datum, allocator: std.mem.Allocator) Datum.Error!
     return switch (ltag) {
         .boolean => Datum.Error.Invalid,
         .binary => Datum.Error.Invalid,
-        inline else => |tag| cmp_do(tag, left, right, allocator),
+        inline else => |tag| cmp_do(tag, op, left, right, allocator),
     };
 }

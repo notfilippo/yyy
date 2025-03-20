@@ -1,6 +1,7 @@
 const std = @import("std");
 const batch = @import("../meta/batch.zig");
 const datum = @import("../meta//datum.zig");
+const compare = @import("../compute/compare.zig");
 
 pub const Predicate = union(enum) {
     const Self = @This();
@@ -34,7 +35,7 @@ pub const Binary = struct {
         const right = try self.right.evaluate(rb, allocator);
 
         switch (self.op) {
-            Op.eq => return try datum.cmp(left, right, allocator),
+            Op.eq => return try datum.cmp(compare.eq, left, right, allocator),
         }
 
         return left;
